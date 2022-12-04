@@ -2,7 +2,7 @@
 
 # %% auto 0
 __all__ = ['DATASET_PATH', 'EyeQDataset', 'get_padding', 'zoom_augmentation', 'get_dataset', 'inverse_transform',
-           'prepare_for_vis']
+           'convert_to_image']
 
 # %% ../nbs/dataset_utils.ipynb 2
 DATASET_PATH = "/home/tiurin/projects/ExampleProject/Temp"
@@ -125,7 +125,8 @@ def inverse_transform(tensor):
     return invTrans(tensor)
 
 # %% ../nbs/dataset_utils.ipynb 9
-def prepare_for_vis(tensor):
+def convert_to_image(tensor):
     tensor = inverse_transform(tensor)
-    tensor = tensor.detach().numpy().transpose(1,2,0)
+    tensor = tensor.detach().cpu().numpy()*255
+    tensor = tensor.astype('uint8')
     return tensor
