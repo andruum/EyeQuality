@@ -68,7 +68,7 @@ import random
 def zoom_augmentation(tensor):
     width = tensor.size(dim=2)
     height = tensor.size(dim=1)
-    scale = random.uniform(0.8, 1)
+    scale = random.uniform(0.6, 1)
     width_n = int(width*scale)
     height_n = int(height*scale)
     tensor = torchvision.transforms.functional.resize(tensor, (height_n, width_n))
