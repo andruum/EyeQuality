@@ -2,9 +2,10 @@
 
 # %% auto 0
 __all__ = ['DATASET_PATH', 'NUM_CORES', 'color_feature', 'moving_average_filter', 'sobel', 'focus_features',
-           'illumination_features', 'contrast_features', 'extract_sift_features', 'downscale_image', 'load_image',
-           'get_image_features', 'FeatureGenerator', 'zoom_augmentation', 'random_rotation_augmentation',
-           'augument_image', 'Dataset', 'EyeQDataset', 'RandomImages', 'DRIMDBDataset', 'get_dataset']
+           'focus_features_laplace', 'illumination_features', 'contrast_features', 'extract_sift_features',
+           'downscale_image', 'load_image', 'get_image_features', 'FeatureGenerator', 'zoom_augmentation',
+           'random_rotation_augmentation', 'augument_image', 'Dataset', 'EyeQDataset', 'RandomImages', 'DRIMDBDataset',
+           'get_dataset']
 
 # %% ../nbs/dataset.ipynb 1
 DATASET_PATH = "/home/tiurin/projects/ExampleProject/Temp"
@@ -52,15 +53,22 @@ def focus_features(image):
     return FM1, FM2, FM3
 
 # %% ../nbs/dataset.ipynb 7
+def focus_features_laplace(image):
+    lap_var = cv.Laplacian(image, cv.CV_64F, ksize=3).var()
+    lap_var2 = cv.Laplacian(image, cv.CV_64F, ksize=5).var()
+    lap_var3 = cv.Laplacian(image, cv.CV_64F, ksize=9).var()
+    return lap_var, lap_var2, lap_var3
+
+# %% ../nbs/dataset.ipynb 8
 def illumination_features(image):
-    non_zero_vals = image[image>0]
+    non_zero_vals = image[image>5]
     IM1 = np.mean(non_zero_vals)
     IM2 = np.var(non_zero_vals[non_zero_vals<=IM1])
     IM3 = np.var(non_zero_vals[non_zero_vals>IM1])    
     IM4 = np.var(non_zero_vals)
     return IM1, IM2, IM3, IM4
 
-# %% ../nbs/dataset.ipynb 8
+# %% ../nbs/dataset.ipynb 9
 def contrast_features(image):
     hist = cv.calcHist([image.flatten()], [0], None, [16], [1, 256])
     ct1 = np.abs(hist/np.sum(hist)-0.0625).sum()
@@ -72,9 +80,9 @@ def contrast_features(image):
     ct4 = (hist==0).sum()
     return ct1, ct2, ct3, ct4
 
-# %% ../nbs/dataset.ipynb 9
+# %% ../nbs/dataset.ipynb 10
 def extract_sift_features(patches):
-    sift_extractor = cv.SIFT_create()
+    sift_extractor = cv.xfeatures2d.SIFT_create()
     features = []
     for patch in patches:
         if patch is None:
@@ -86,7 +94,7 @@ def extract_sift_features(patches):
     features = np.concatenate(features, axis=0)
     return features
 
-# %% ../nbs/dataset.ipynb 10
+# %% ../nbs/dataset.ipynb 11
 def downscale_image(image, max_dim):
     height, width = image.shape[:2]
     
@@ -105,7 +113,7 @@ def downscale_image(image, max_dim):
     resized_image = cv.resize(image, (new_width, new_height))
     return resized_image
 
-# %% ../nbs/dataset.ipynb 11
+# %% ../nbs/dataset.ipynb 12
 def load_image(img, max_size=400):
     if type(img) is str:
         img = cv.imread(img, 0)
@@ -116,19 +124,19 @@ def load_image(img, max_size=400):
     img = downscale_image(img, max_size)
     return img
 
-# %% ../nbs/dataset.ipynb 12
+# %% ../nbs/dataset.ipynb 13
 def get_image_features(img):
     img = load_image(img)
     features_ptchs = extract_sift_features([img])
     return features_ptchs
 
-# %% ../nbs/dataset.ipynb 13
+# %% ../nbs/dataset.ipynb 14
 from joblib import Parallel, delayed
 
-# %% ../nbs/dataset.ipynb 14
+# %% ../nbs/dataset.ipynb 15
 NUM_CORES = 29
 
-# %% ../nbs/dataset.ipynb 15
+# %% ../nbs/dataset.ipynb 16
 import numpy as np
 from sklearn.cluster import MiniBatchKMeans as KMeans
 import glob
@@ -143,6 +151,13 @@ class FeatureGenerator():
     def __init__(self, dataset_path_bow=None, model_name_kmean=None, feature_size=100):
         
         self.feature_size = feature_size
+        
+        self.names = [f'keypoint_{i}' for i in range(100)]
+        self.names.append('color_1/1')
+        self.names.extend(['focus_1/3', 'focus_2/3', 'focus_3/3'])
+        self.names.extend(['contrast_1/4', 'contrast_2/4', 'contrast_3/4', 'contrast_4/4'])
+        self.names.extend(['illumination_1/4', 'illumination_2/4', 'illumination_3/4', 'illumination_4/4'])
+        self.names.extend(['focus_laplace_1/3', 'focus_laplace_2/3', 'focus_laplace_3/3'])
         
         if os.path.isfile(model_name_kmean+"_kmeans.pkl"):
             with open(model_name_kmean+"_kmeans.pkl", "rb") as f:
@@ -187,15 +202,18 @@ class FeatureGenerator():
                 histogram[index] += 1
         
         if include_generic:
+            if type(img) is str:
+                img = load_image(img)
+            
             histogram = np.append(histogram, color_feature(img))
             histogram = np.append(histogram, focus_features(img))
             histogram = np.append(histogram, contrast_features(img))
             histogram = np.append(histogram, illumination_features(img))
+            histogram = np.append(histogram, focus_features_laplace(img))
         
         return histogram
-    
 
-# %% ../nbs/dataset.ipynb 18
+# %% ../nbs/dataset.ipynb 19
 def zoom_augmentation(image, zoom_factor):
     height, width = image.shape[:2]
     new_height, new_width = int(height * zoom_factor), int(width * zoom_factor)
@@ -208,7 +226,7 @@ def zoom_augmentation(image, zoom_factor):
                                      left_pad, right_pad, cv.BORDER_CONSTANT, value=0)
     return padded_image
 
-# %% ../nbs/dataset.ipynb 19
+# %% ../nbs/dataset.ipynb 20
 def random_rotation_augmentation(image, angle_range=(-180, 180)):
     # Randomly choose rotation angle
     angle = random.uniform(*angle_range)
@@ -224,14 +242,14 @@ def random_rotation_augmentation(image, angle_range=(-180, 180)):
     
     return rotated_image
 
-# %% ../nbs/dataset.ipynb 20
+# %% ../nbs/dataset.ipynb 21
 def augument_image(img):
     zoom = random.uniform(0.8, 1)
     img = zoom_augmentation(img, zoom)
     img = random_rotation_augmentation(img)
     return img
 
-# %% ../nbs/dataset.ipynb 21
+# %% ../nbs/dataset.ipynb 22
 import hashlib
 
 class Dataset():
@@ -277,7 +295,7 @@ class Dataset():
         features = self.feature_gen.generate_features(img)
         return (class_id, features, img_pth)
 
-# %% ../nbs/dataset.ipynb 22
+# %% ../nbs/dataset.ipynb 23
 import os, glob
 import random
 
@@ -298,7 +316,7 @@ class EyeQDataset(Dataset):
         self.load_data(data_paths)
     
 
-# %% ../nbs/dataset.ipynb 23
+# %% ../nbs/dataset.ipynb 24
 import os, glob
 import random
 
@@ -320,7 +338,7 @@ class RandomImages(Dataset):
         self.load_data(data_paths)
         
 
-# %% ../nbs/dataset.ipynb 24
+# %% ../nbs/dataset.ipynb 25
 class DRIMDBDataset(Dataset):
 
     def __init__(self, dataset_path, feature_gen):
@@ -342,27 +360,37 @@ class DRIMDBDataset(Dataset):
 # %% ../nbs/dataset.ipynb 29
 from sklearn.model_selection import train_test_split
 
-def get_dataset(eye=True, random=True, test=False, test_size=0.0, features_range=(0, 112)):
+def get_dataset(eye=True, random=True, test=False, 
+                test_size=0.0, 
+                features_range=(0, 112), 
+                return_names=False, classes=(0,1,2)):
     X = []
     y = []
+    names = []
     
     feature_gen = FeatureGenerator([], 'all_data')
     
-    if eye:
-        dataset = EyeQDataset([os.path.join(DATASET_PATH, 'processed'), os.path.join(DATASET_PATH, 'processed_test')], feature_gen)
-        X.extend([d[1][features_range[0]:features_range[1]] for d in dataset.data])
-        y.extend([d[0] for d in dataset.data])
-    if random:
-        dataset_random = RandomImages(os.path.join(DATASET_PATH, 'trash_images'), feature_gen)
-        X.extend([d[1][features_range[0]:features_range[1]] for d in dataset_random.data])
-        y.extend([d[0] for d in dataset_random.data])
-    if test:
-        dataset_drimdb = DRIMDBDataset('/home/tiurin/projects/ExampleProject/Temp/DRIMDB', feature_gen)
-        X.extend([d[1][features_range[0]:features_range[1]] for d in dataset_drimdb.data])
-        y.extend([d[0] for d in dataset_drimdb.data])
+    datasets = []
     
-    if test_size > 0:
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size)
-        return X_train, X_test, y_train, y_test
-    else:
-        return X, y
+    if eye:
+        paths = [os.path.join(DATASET_PATH, 'processed'), os.path.join(DATASET_PATH, 'processed_test')]
+        paths.append(os.path.join(DATASET_PATH, 'sorted_middle'))
+        datasets.append(EyeQDataset(paths, feature_gen))
+        print(len(datasets[0].data))
+    if random:
+        datasets.append(RandomImages(os.path.join(DATASET_PATH, 'trash_images'), feature_gen))
+    if test:
+        datasets.append(DRIMDBDataset('/home/tiurin/projects/ExampleProject/Temp/DRIMDB', feature_gen))
+    
+    
+    for dataset in datasets:
+        for d in dataset.data:
+            if d[0] not in classes: continue
+            X.append(d[1][features_range[0]:features_range[1]])
+            y.append(d[0])
+            names.append(d[2])
+
+    arrs = [X, y]
+    if return_names: arrs.append(names)
+    if test_size!= 0: return train_test_split(*arrs, test_size=test_size)
+    else: return X, y, names

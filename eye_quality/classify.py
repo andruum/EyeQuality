@@ -12,10 +12,18 @@ class XGBClassifier():
     def __init__(self, file_name):
         self.xgb_model = pickle.load(open(file_name, "rb"))
         self.feature_gen = dataset.FeatureGenerator([], 'all_data')
-        
-    def predict(self, img):
+    
+    def preload(self, img):
         img = dataset.load_image(img)
         if img is None:
             return None
         f = self.feature_gen.generate_features(img, include_generic=True)
+        return f
+        
+    def predict(self, img):
+        f = self.preload(img)
         return self.xgb_model.predict([f])[0]
+    
+    def predict_prob(self, img):
+        f = self.preload(img)
+        return self.xgb_model.predict_proba([f])[0]
